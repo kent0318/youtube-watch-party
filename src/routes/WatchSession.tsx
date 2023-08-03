@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import VideoPlayer from "../components/VideoPlayer";
 import { useNavigate, useParams } from "react-router-dom";
 import { Box, Button, TextField, Tooltip } from "@mui/material";
 import LinkIcon from "@mui/icons-material/Link";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
+import { Socket } from "socket.io-client";
 
-const WatchSession: React.FC = () => {
+const WatchSession: React.FC<{ socket: Socket }> = ({ socket }) => {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const [url, setUrl] = useState<string | null>(null);
@@ -13,10 +14,14 @@ const WatchSession: React.FC = () => {
   const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
-    // load video by session ID -- right now we just hardcode a constant video but you should be able to load the video associated with the session
-    setUrl("https://www.youtube.com/watch?v=NX1eKLReSpY");
-
-    // if session ID doesn't exist, you'll probably want to redirect back to the home / create session page
+    socket.emit("join_session", sessionId, (urlReceived?: string) => { 
+      if (urlReceived !== undefined) {
+        setUrl(urlReceived); 
+      } else {
+        alert("Session not found!");
+        navigate("/create");
+      } 
+    });
   }, [sessionId]);
 
   if (!!url) {
@@ -57,6 +62,7 @@ const WatchSession: React.FC = () => {
           <Tooltip title="Create new watch party">
             <Button
               onClick={() => {
+                socket.emit("leave_session", sessionId);
                 navigate("/create");
               }}
               variant="contained"
@@ -66,11 +72,11 @@ const WatchSession: React.FC = () => {
             </Button>
           </Tooltip>
         </Box>
-        <VideoPlayer url={url} />;
+        <VideoPlayer url={url} socket={socket} />;
       </>
     );
   }
-
+  console.log("invalid url");
   return null;
 };
 

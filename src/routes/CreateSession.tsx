@@ -2,14 +2,21 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Box, Button, TextField } from "@mui/material";
 import { v4 as uuidv4 } from "uuid";
+import { Socket } from "socket.io-client";
+import ReactPlayer from "react-player";
 
-const CreateSession: React.FC = () => {
+const CreateSession: React.FC<{socket: Socket}> = ({socket}) => {
   const navigate = useNavigate();
   const [newUrl, setNewUrl] = useState("");
 
   const createSession = async () => {
-    setNewUrl("");
+    // Check if the url is a playable url.
+    if (!ReactPlayer.canPlay(newUrl)) {
+      alert("Please enter a valid youtube url!");
+      return;
+    }
     const sessionId = uuidv4();
+    await socket.emitWithAck("create_session", sessionId, newUrl);
     navigate(`/watch/${sessionId}`);
   };
 

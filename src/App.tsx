@@ -2,6 +2,9 @@ import { Box, createTheme, CssBaseline, ThemeProvider } from "@mui/material";
 import { Routes, Route } from "react-router-dom";
 import WatchSession from "./routes/WatchSession";
 import CreateSession from "./routes/CreateSession";
+import io from "socket.io-client";
+
+const socket = io("http://localhost:3001");
 
 const darkTheme = createTheme({
   palette: {
@@ -23,9 +26,9 @@ const App = () => {
         gap={1}
       >
         <Routes>
-          <Route path="/" element={<CreateSession />} />
-          <Route path="/create" element={<CreateSession />} />
-          <Route path="/watch/:sessionId" element={<WatchSession />} />
+          <Route path="/" element={<CreateSession socket={socket} />} />
+          <Route path="/create" element={<CreateSession socket={socket} />} />
+          <Route path="/watch/:sessionId" element={<WatchSession socket={socket} />} />
         </Routes>
       </Box>
     </ThemeProvider>
