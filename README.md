@@ -9,7 +9,10 @@ We want to respect your time, so please try not to spend more than 5 hours on th
 
 ### Instructions
 
-To run the app simply "npm i" and then "npm start"
+To run the app, do the following two steps in sequential order:
+1. Start the server by "cd server", "npm i", "npm run build" and "npm run start".
+2. In a new terminal, start the react app by "npm i" and "npm start".
+3. Create session through "http://localhost:3000/" on your browser.
 
 ### Problem
 Your task is to build a collaborative “Watch Party” app that lets a distributed group of users watch youtube videos together. The frontend should be written in Typescript (we have a skeleton for you set up) and the backend should be written in Node.JS. The app should support two main pages:

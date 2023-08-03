@@ -7,12 +7,15 @@ const express_1 = __importDefault(require("express"));
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 ;
+// Map from session id to session object.
 const sessions = new Map();
 const app = (0, express_1.default)();
 const server = http_1.default.createServer(app);
 const io = new socket_io_1.Server(server, { cors: { origin: "http://localhost:3000" } });
 io.on("connection", (socket) => {
     console.log("client connected");
+    // Create session based on the given session id and youtube url, 
+    // then acknowledge so that client can proceed to watch session page.
     socket.on("create_session", (sessionId, url, acknowledge) => {
         sessions.set(sessionId, {
             id: sessionId,
@@ -32,6 +35,7 @@ io.on("connection", (socket) => {
             console.log("joined session", sessionId);
             callback(sessions.get(sessionId).url);
         }
+        // If no session id found, call back with no argument to indicate a failure.
         else {
             callback();
             console.log("session not found");
@@ -46,15 +50,18 @@ io.on("connection", (socket) => {
                 if (session.started) {
                     const playerState = {
                         playing: session.playing,
-                        currentTime: session.prevVideoTime
+                        time: session.prevVideoTime
                     };
+                    // If the session has been playing, calculate the expected 
+                    // video time.
                     if (session.playing) {
-                        playerState.currentTime += (Date.now() - session.prevTime) / 1000;
+                        playerState.time += (Date.now() - session.prevTime) / 1000;
                     }
                     socket.emit("set_player_state", playerState);
                     console.log("client syncing with state", playerState);
                     // Let the client start playing the video instead of syncing if
-                    // the session has not actually started (the client is the first to join).
+                    // the session has not actually started (in other words, the 
+                    // client is the first to join).
                 }
                 else {
                     session.prevTime = Date.now();
@@ -78,14 +85,15 @@ io.on("connection", (socket) => {
             if (sessions.has(room)) {
                 const session = sessions.get(room);
                 const curTime = Date.now();
-                if (playerState.currentTime === undefined) {
+                if (playerState.time === undefined) {
                     if (session.playing) {
                         session.prevVideoTime += (curTime - session.prevTime) / 1000;
                     }
                 }
                 else {
-                    session.prevVideoTime = playerState.currentTime;
+                    session.prevVideoTime = playerState.time;
                 }
+                // Update session status.
                 session.playing = playerState.playing;
                 session.prevTime = curTime;
                 session.started = true;
@@ -95,6 +103,7 @@ io.on("connection", (socket) => {
         console.log("player state changed to", playerState, socket.id);
     });
 });
+// On room delete, delete the corresponding session.
 io.sockets.adapter.on("delete-room", (room) => {
     if (sessions.has(room)) {
         sessions.delete(room);

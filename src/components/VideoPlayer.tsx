@@ -1,5 +1,5 @@
 import { Box, Button } from "@mui/material";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactPlayer from "react-player";
 import { Socket } from "socket.io-client";
 import { PlayerState } from "../../utils/types"
@@ -18,29 +18,55 @@ const withinThreshold = (prevTime: number, curTime: number) =>
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ url, socket, hideControls }) => {
   const [hasJoined, setHasJoined] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(false); 
   const player = useRef<ReactPlayer>(null);
-  const prevTime = useRef(0.0);
-  const desiredState = useRef<PlayerState | null>({playing: true});
+  const prevState = useRef<PlayerState>({playing: false, time: 0});
+  const desiredState = useRef<PlayerState | null>(null);
+  const ended = useRef(false);
+
+  // Update the player state to the given new state.
+  const updateState = useCallback((newState: PlayerState) => {
+    if (player.current) {
+      console.log("change player state ", newState);
+      // New state time should not exceed the duration of the video.
+      if (newState.time !== undefined) {
+        newState.time = Math.min(newState.time, player.current.getDuration());
+      }
+      desiredState.current = newState;
+      // Perform play/pause and possibly seek to achieve the new state.
+      setPlaying(newState.playing);
+      if (newState.time !== undefined) {
+        player.current.seekTo(newState.time, "seconds");
+      }
+    }
+  }, []);
+
+  // Check if the desired state is achieved by the given current state.
+  const checkStateAchieved = useCallback((curState: PlayerState) => {
+    if (desiredState.current == null) return true;
+    return desiredState.current.playing === curState.playing &&
+    (desiredState.current.time === undefined || 
+    withinThreshold(desiredState.current.time, curState.time!))
+  }, []);
+
+  // Send state changed signal to server.
+  const sendStateChangedSignal = useCallback((curState: PlayerState) => {
+    // If seek detected, send a seek signal.
+    if (!withinThreshold(prevState.current.time!, curState.time!)) {
+      socket.emit("player_state_changed", curState);
+    // Otherwise, check if playing status changed and send a play/pause signal.
+    } else if (curState.playing !== prevState.current.playing) {
+      socket.emit("player_state_changed", {
+        playing: curState.playing
+      });
+    }
+  }, [socket])
 
   useEffect(() => {
     // Listen to set_player_state signal from server and change 
     // player state accordingly. 
-    socket.on("set_player_state", (newState: PlayerState) => {
-      if (player.current) {
-        console.log("change player state ", newState);
-        // set the new state as the desired state.
-        desiredState.current = newState;
-        if (player.current.props.playing !== newState.playing) {
-          setPlaying(newState.playing);
-        }
-        if (newState.currentTime !== undefined) {
-          prevTime.current = newState.currentTime;
-          player.current.seekTo(newState.currentTime, "seconds");
-        }
-      }
-    });
-  }, [socket]);
+    socket.on("set_player_state", updateState);
+  }, [socket, updateState]);
 
   const handleReady = () => {
     setIsReady(true);
@@ -48,6 +74,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ url, socket, hideControls }) 
 
   const handleEnd = () => {
     console.log("Video ended");
+    ended.current = true;
   };
 
   const handleSeek = (seconds: number) => {
@@ -65,30 +92,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ url, socket, hideControls }) 
 
   const handlePlay = () => {
     if (player.current) {
-      const curTime = player.current.getCurrentTime()
-      console.log("User played video at time: ", curTime, desiredState.current);
-      // the client should not send player state update signal to server
-      // before the desired state is achieved.
-      if (desiredState.current === null) {
-        const player_state: PlayerState = {playing: true}
-        socket.emit("player_state_changed", player_state);
-      }
-      // syncing.current = false;
       setPlaying(true);
+      ended.current = false;
+      console.log("User played video at time: ", player.current.getCurrentTime());
     }
   };
 
   const handlePause = () => {
     if (player.current) {
-      const curTime = player.current.getCurrentTime()
-      console.log("User paused video at time: ", curTime);
-  
-      if (desiredState.current === null) {
-        const player_state: PlayerState = {playing: false}
-        socket.emit("player_state_changed", player_state);
-      }
-      // syncing.current = false;
       setPlaying(false);
+      ended.current = false;
+      console.log("User paused video at time: ", player.current.getCurrentTime());
     }
   };
 
@@ -104,30 +118,33 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ url, socket, hideControls }) 
   }) => {
     console.log("Video progress: ", state);
     if (player.current) {
-      // Check if desired state is achieved.
-      if (desiredState.current && 
-        desiredState.current.playing === player.current.props.playing) {
-        if (desiredState.current.currentTime === undefined || 
-          withinThreshold(desiredState.current.currentTime, state.playedSeconds)) {
-            desiredState.current = null;
-          }
+      const curState: PlayerState = {
+        playing: player.current.props.playing!,
+        // Edge case: after the video ended, onProgress will still be triggered,
+        // but the player time (whether obtained from state argument or 
+        // getCurrentTime()) will not reach the duration of the video. In such 
+        // casem manually set time to duration.
+        time: ended.current ? player.current.getDuration() : state.playedSeconds
       }
-      if (desiredState.current === null) {
-        // Check if a seek took place.
-        if (!withinThreshold(prevTime.current, state.playedSeconds)) {
-          socket.emit("player_state_changed", { 
-            playing: playing, currentTime: state.playedSeconds 
-          });
+      if (desiredState.current) {
+        // Check whether desired state is achieved. If not, perform another
+        // update.
+        if (checkStateAchieved(curState)) {
+          desiredState.current = null;
+        } else {
+          updateState(desiredState.current);
         }
+      } else {
+        console.log("emitting at onProgress", prevState, curState);
+        sendStateChangedSignal(curState);
       }
+      prevState.current = curState;
     }
-    prevTime.current = state.playedSeconds;
   };
 
   const handleWatchSession = () => {
     setHasJoined(true);
     socket.emit("player_state_init", () => {
-      desiredState.current = null;
       setPlaying(true);
     });
   };
