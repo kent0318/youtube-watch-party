@@ -129,7 +129,7 @@ io.on("connection", (socket) => {
                 socket.to(room).emit("set_player_state", playerState);
             }
         }
-        console.log("player state changed to", playerState, socket.id);
+        console.log("player state changed to", playerState);
     });
 });
 

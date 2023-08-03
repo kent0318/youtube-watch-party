@@ -135,7 +135,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ url, socket, hideControls }) 
           updateState(desiredState.current);
         }
       } else {
-        console.log("emitting at onProgress", prevState, curState);
         sendStateChangedSignal(curState);
       }
       prevState.current = curState;
